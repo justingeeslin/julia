@@ -822,6 +822,46 @@ INTERP_CALLBACK_ABI void *jl_toplevel_eval_callback(interpreter_state *istate, v
     return jl_toplevel_eval_flex(istate, args->m, args->e, 1, 0);
 }
 
+// Prototype WIP junk!
+typedef struct {
+    jl_sym_t* filename;
+    size_t line;
+} ast_interpreter_state;
+
+typedef void *(*interpreter_cb)(void*);
+// Must return number of additional uintptr_t words consumed.
+typedef size_t (capture_frame_cb)(void* state, uintptr_t *bt_data, size_t space_remaining);
+
+size_t capture_frame(void *state, uintptr_t *bt_data, size_t space_remaining)
+{
+    ast_interpreter_state *ast_state = (ast_interpreter_state*)state;
+    if (space_remaining >= 2) {
+        bt_data[0] = ast_state->filename
+        bt_data[1] = ast_state->line
+    }
+    return 2;
+}
+
+void* enter_interpreter_frame(interpreter_cb interpret, void* interp_state, void* vargs,
+                              capture_frame_cb capture_frame)
+{
+    // Boo. Must be stored on stack.
+    volatile void* data[2] = {interp_state, capture_frame};
+    interpret(interp_state, vargs);
+}
+
+
+JL_DLLEXPORT jl_value_t *jl_toplevel_eval(jl_module_t *m, jl_value_t *e)
+{
+    jl_toplevel_eval_args args = {m, e};
+    interpreter_state istate = {0};
+    return (jl_value_t *)enter_interpreter_frame(jl_toplevel_eval_callback,
+                                                 (void*)&istate,
+                                                 (void*)&capture_frame,
+                                                 (void*)&args);
+}
+
+
 // Evaluate the toplevel surface syntax `e` in module `m`.
 // See also `jl_toplevel_eval_in()` for a version with more error checking.
 JL_DLLEXPORT jl_value_t *jl_toplevel_eval(jl_module_t *m, jl_value_t *e)
